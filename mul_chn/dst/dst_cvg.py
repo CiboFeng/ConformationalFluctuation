@@ -1,0 +1,61 @@
+"""Import Modules"""
+import argparse
+import numpy as np
+import os
+from scipy.spatial.distance import squareform,pdist
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.figure import figaspect
+import sys
+sys.path.append('D:\\Work\\Code\\Functions')
+sys.path.append('/hpc2hdd/home/cfeng593/opt/mypylib')
+sys.path.append('/hpc2hdd/home/chu-amat/cbfengphy/functions')
+from xtc import xtc_rd
+
+"""Set Arguments"""
+parser=argparse.ArgumentParser()
+parser.add_argument('-f',type=str,help='The trajectory file')
+args=parser.parse_args()
+xtcfile=args.f
+mdl='_'.join(xtcfile.split('/')[-2].split('_')[-2:])
+outname=f'dst_cvg/{mdl}'
+seq='MASNDYTQQA TQSYGAYPTQ PGQGYSQQSS QPYGQQSYSG YSQSTDTSGY GQSSYSSYGQ SQNTGYGTQS TPQGYGSTGG YGSSQSSQSS YGQQSSYPGY ' \
+    'GQQPAPSSTS GSYGSSSQSS SYGQPQSGSY SQQPSYGGQQ QSYGQQQSYN PPQGYGQQNQ YNS'
+seq=seq.replace(' ','')
+nat=len(seq)
+res=['A','R','N','D','C','Q','E','G','H','I','L','K','M','F','P','S','T','W','Y','V']
+m=[71.08,156.20,114.10,115.10,103.10,128.10,129.10,57.05,137.10,113.20,113.20,128.20,131.20,147.20,97.12,87.08,101.10,186.20,163.20,99.07]
+nhi=1000
+nset=5
+
+""""""
+seq=[res.index(seq[i]) for i in range(nat)]
+m=np.array([m[seq[i]] for i in range(nat)])
+
+r,tp,b=xtc_rd(xtcfile,f'{xtcfile[:-10]}.dat')
+z=r[:-1,:,-1]
+zc=np.mean(z,axis=1,keepdims=True)
+z-=zc
+nfr,N=np.shape(z)
+nch=round(N/nat)
+M=np.tile(m,(nfr,nch))
+b-=np.mean(b,axis=-1,keepdims=True)
+bin=np.linspace(b[0,-1,0],b[0,-1,1],nhi+1) ### linspace contains the end.
+Z=np.tile((bin[:-1]+bin[1:])/2,(nset,1))
+dst=np.zeros((nset,nhi))
+for i in range(nset):
+    bin_idx=np.digitize(z[round(i/nset*nfr):round((i+1)/nset*nfr)].reshape(-1),bin)-1
+    hist=np.bincount(bin_idx,weights=M[round(i/nset*nfr):round((i+1)/nset*nfr)].reshape(-1),minlength=nhi)
+    dst[i]=hist/nfr/(bin[1]-bin[0])
+
+""""""
+if '/' in outname:
+    outdir='/'.join(outname.split('/')[:-1])
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+pyw=open(f'{outname}.pyw','w')
+for i in range(nset):
+    pyw.write(f'Z Coordinate, Density: (The {i}-th Set)\n')
+    for j in range(nhi):
+        pyw.write(f'{Z[i,j]} {dst[i,j]}\n')
+    pyw.write('\n')

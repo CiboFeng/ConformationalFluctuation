@@ -1,0 +1,72 @@
+"""Import Modules"""
+import argparse
+import numpy as np
+import os
+from scipy.spatial.distance import squareform,pdist
+import matplotlib.pyplot as plt
+from matplotlib import colors
+from matplotlib.figure import figaspect
+import sys
+sys.path.append('D:\\Work\\Code\\Functions')
+sys.path.append('/hpc2hdd/home/cfeng593/opt/mypylib')
+sys.path.append('/hpc2hdd/home/chu-amat/cbfengphy/functions')
+from xtc import xtc_rd
+
+"""Set Arguments"""
+parser=argparse.ArgumentParser()
+parser.add_argument('-f',type=str,help='The trajectory file')
+args=parser.parse_args()
+xtcfile=args.f
+idx='_'.join(xtcfile.split('/')[-2].split('_')[-3:])
+outname=f'autocor_cont_seq/{idx}'
+mu=1.0
+csgm=float(idx.split('_')[0][:-3])
+res=['A','R','N','D','C','Q','E','G','H','I','L','K','M','F','P','S','T','W','Y','V']
+sgm=[5.04,6.56,5.68,5.58,5.48,6.02,5.92,4.50,6.08,6.18,6.18,6.36,6.18,6.36,5.56,5.18,5.62,6.78,6.46,5.86]
+seq='MASNDYTQQA TQSYGAYPTQ PGQGYSQQSS QPYGQQSYSG YSQSTDTSGY GQSSYSSYGQ SQNTGYGTQS TPQGYGSTGG YGSSQSSQSS YGQQSSYPGY ' \
+    'GQQPAPSSTS GSYGSSSQSS SYGQPQSGSY SQQPSYGGQQ QSYGQQQSYN PPQGYGQQNQ YNS'
+seq=seq.replace(' ','')
+nat=len(seq)
+seq=[res.index(seq[i]) for i in range(nat)]
+dt=10e-6*10000 ### ns
+
+""""""
+r=xtc_rd(xtcfile,f'{xtcfile[:-4]}.dat')[0]
+nfr,nat,_=np.shape(r)
+D=np.zeros((nfr,nat,nat))
+for i in range(nfr):
+    D[i]=squareform(pdist(r[i],'euclidean'))
+
+Sgm=np.zeros(nat)
+for i in range(nat):
+    Sgm[i]=sgm[seq[i]]
+Sgm=(Sgm[np.newaxis,:]+Sgm[:,np.newaxis])/2
+Q=0.5*(1-np.tanh(mu*(D-(csgm*Sgm)[np.newaxis])))
+
+q=np.zeros((nfr,nat))
+for i in range(nat):
+    for j in range(nat-i):
+        q[:,i]+=Q[:,j,i+j]
+    q[:,i]/=nat-i
+
+qmean=np.mean(q,axis=0,keepdims=True)
+qvar=np.var(q,axis=0,keepdims=True)
+qc=q-qmean
+qcrs=qc[np.newaxis,:,:]*qc[:,np.newaxis,:]
+qcrsmean=np.zeros((nfr,nat))
+for i in range(nfr):
+    for j in range(nfr-i):
+        qcrsmean[i]+=qcrs[j,i+j]
+    qcrsmean[i]/=nfr-i
+ac=qcrsmean/qvar
+
+""""""
+if '/' in outname:
+    outdir='/'.join(outname.split('/')[:-1])
+    if not os.path.exists(outdir):
+        os.makedirs(outdir)
+pyw=open(f'{outname}.pyw','w')
+pyw.write('Lag Time (ns), Sequence Distance, Autocorrelation of Contact Probability:\n')
+for i in range(nfr):
+    for j in range(nat):
+        pyw.write(f'{i*dt} {j} {ac[i,j]}\n')
